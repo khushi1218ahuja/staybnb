@@ -356,6 +356,12 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  } else if (!headers.has("authorization") && typeof window !== "undefined") {
+    // Fallback to localStorage if no getter is configured but we are in a browser
+    const token = localStorage.getItem("token");
+    if (token) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
   }
 
   const requestInfo = { method, url: resolveUrl(input) };

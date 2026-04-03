@@ -3,13 +3,26 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: StayBnB Room Booking Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: rooms
+    description: Room listing operations
+  - name: bookings
+    description: Booking operations
+  - name: reviews
+    description: Review operations
+  - name: admin
+    description: Admin operations
+  - name: stats
+    description: Platform statistics and summaries
+
 paths:
   /healthz:
     get:
@@ -24,7 +37,610 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms:
+    get:
+      operationId: listRooms
+      tags: [rooms]
+      summary: List rooms with filters
+      parameters:
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [ENTIRE, PRIVATE, SHARED]
+        - name: minPrice
+          in: query
+          schema:
+            type: number
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 12
+      responses:
+        "200":
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomListResponse"
+
+    post:
+      operationId: createRoom
+      tags: [rooms]
+      summary: Create a new room (HOST only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomRequest"
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "403":
+          description: Not a host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms/{id}:
+    get:
+      operationId: getRoom
+      tags: [rooms]
+      summary: Get room details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Room with reviews
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetail"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: updateRoom
+      tags: [rooms]
+      summary: Update room (HOST/owner only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomRequest"
+      responses:
+        "200":
+          description: Room updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "403":
+          description: Not owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      operationId: deleteRoom
+      tags: [rooms]
+      summary: Delete room (HOST/owner only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Room deleted
+        "403":
+          description: Not owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms/host/my:
+    get:
+      operationId: getHostRooms
+      tags: [rooms]
+      summary: Get current host's rooms
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Host's rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+
+  /rooms/{id}/reviews:
+    get:
+      operationId: getRoomReviews
+      tags: [reviews]
+      summary: Get reviews for a room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Room reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+
+    post:
+      operationId: createReview
+      tags: [reviews]
+      summary: Create a review for a room
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+      responses:
+        "201":
+          description: Review created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "403":
+          description: No completed booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reviews/{id}:
+    delete:
+      operationId: deleteReview
+      tags: [reviews]
+      summary: Delete a review (admin or author)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Review deleted
+        "403":
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings:
+    post:
+      operationId: createBooking
+      tags: [bookings]
+      summary: Create a booking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingRequest"
+      responses:
+        "201":
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "409":
+          description: Dates unavailable (conflict)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/my:
+    get:
+      operationId: getMyBookings
+      tags: [bookings]
+      summary: Get current user's bookings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User's bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+
+  /bookings/host:
+    get:
+      operationId: getHostBookings
+      tags: [bookings]
+      summary: Get all bookings for host's rooms
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Host's bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [bookings]
+      summary: Get a booking by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/{id}/cancel:
+    put:
+      operationId: cancelBooking
+      tags: [bookings]
+      summary: Cancel a booking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "403":
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/users:
+    get:
+      operationId: adminGetUsers
+      tags: [admin]
+      summary: Get all users (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /admin/users/{id}:
+    delete:
+      operationId: adminDeleteUser
+      tags: [admin]
+      summary: Delete a user (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: User deleted
+
+  /admin/bookings:
+    get:
+      operationId: adminGetBookings
+      tags: [admin]
+      summary: Get all bookings (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+
+  /admin/bookings/{id}/status:
+    put:
+      operationId: adminUpdateBookingStatus
+      tags: [admin]
+      summary: Update booking status (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookingStatusRequest"
+      responses:
+        "200":
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /admin/rooms:
+    get:
+      operationId: adminGetRooms
+      tags: [admin]
+      summary: Get all rooms (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+
+  /stats/summary:
+    get:
+      operationId: getPlatformStats
+      tags: [stats]
+      summary: Get platform-wide statistics (admin dashboard)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStats"
+
+  /stats/host-summary:
+    get:
+      operationId: getHostStats
+      tags: [stats]
+      summary: Get host dashboard summary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Host statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostStats"
+
+  /stats/featured-rooms:
+    get:
+      operationId: getFeaturedRooms
+      tags: [stats]
+      summary: Get top rated / featured rooms for home page
+      responses:
+        "200":
+          description: Featured rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+
+  /stats/cities:
+    get:
+      operationId: getPopularCities
+      tags: [stats]
+      summary: Get popular cities with room counts
+      responses:
+        "200":
+          description: Popular cities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CityStats"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +650,405 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [GUEST, HOST, ADMIN]
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        profilePicture:
+          type: string
+          nullable: true
+        isVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - email
+        - role
+        - isVerified
+        - createdAt
+
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        role:
+          type: string
+          enum: [GUEST, HOST]
+        phone:
+          type: string
+          nullable: true
+      required:
+        - name
+        - email
+        - password
+        - role
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - token
+        - user
+
+    Room:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [ENTIRE, PRIVATE, SHARED]
+        pricePerNight:
+          type: number
+        location:
+          type: string
+        city:
+          type: string
+        amenities:
+          type: array
+          items:
+            type: string
+        images:
+          type: array
+          items:
+            type: string
+        isAvailable:
+          type: boolean
+        avgRating:
+          type: number
+          nullable: true
+        reviewCount:
+          type: integer
+        host:
+          $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - description
+        - type
+        - pricePerNight
+        - location
+        - city
+        - amenities
+        - images
+        - isAvailable
+        - reviewCount
+        - host
+        - createdAt
+
+    RoomDetail:
+      allOf:
+        - $ref: "#/components/schemas/Room"
+        - type: object
+          properties:
+            reviews:
+              type: array
+              items:
+                $ref: "#/components/schemas/Review"
+          required:
+            - reviews
+
+    RoomListResponse:
+      type: object
+      properties:
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/Room"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+      required:
+        - rooms
+        - total
+        - page
+        - limit
+        - totalPages
+
+    RoomRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 5
+        description:
+          type: string
+          minLength: 10
+        type:
+          type: string
+          enum: [ENTIRE, PRIVATE, SHARED]
+        pricePerNight:
+          type: number
+          minimum: 1
+        location:
+          type: string
+        city:
+          type: string
+        amenities:
+          type: array
+          items:
+            type: string
+        images:
+          type: array
+          items:
+            type: string
+        isAvailable:
+          type: boolean
+      required:
+        - title
+        - description
+        - type
+        - pricePerNight
+        - location
+        - city
+        - amenities
+        - images
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        room:
+          $ref: "#/components/schemas/Room"
+        guest:
+          $ref: "#/components/schemas/User"
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        guestCount:
+          type: integer
+        totalPrice:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, CANCELLED]
+        paymentStatus:
+          type: string
+          nullable: true
+        transactionId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - room
+        - guest
+        - checkIn
+        - checkOut
+        - guestCount
+        - totalPrice
+        - status
+        - createdAt
+
+    BookingRequest:
+      type: object
+      properties:
+        roomId:
+          type: integer
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        guestCount:
+          type: integer
+          minimum: 1
+      required:
+        - roomId
+        - checkIn
+        - checkOut
+        - guestCount
+
+    UpdateBookingStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, CANCELLED]
+      required:
+        - status
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+        roomId:
+          type: integer
+        user:
+          $ref: "#/components/schemas/User"
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - roomId
+        - user
+        - rating
+        - comment
+        - createdAt
+
+    ReviewRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          minLength: 5
+      required:
+        - rating
+        - comment
+
+    PlatformStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalHosts:
+          type: integer
+        totalGuests:
+          type: integer
+        totalRooms:
+          type: integer
+        totalBookings:
+          type: integer
+        confirmedBookings:
+          type: integer
+        cancelledBookings:
+          type: integer
+        pendingBookings:
+          type: integer
+        totalRevenue:
+          type: number
+        avgRating:
+          type: number
+      required:
+        - totalUsers
+        - totalHosts
+        - totalGuests
+        - totalRooms
+        - totalBookings
+        - confirmedBookings
+        - cancelledBookings
+        - pendingBookings
+        - totalRevenue
+        - avgRating
+
+    HostStats:
+      type: object
+      properties:
+        totalListings:
+          type: integer
+        activeListings:
+          type: integer
+        totalBookings:
+          type: integer
+        pendingBookings:
+          type: integer
+        confirmedBookings:
+          type: integer
+        totalRevenue:
+          type: number
+        avgRating:
+          type: number
+      required:
+        - totalListings
+        - activeListings
+        - totalBookings
+        - pendingBookings
+        - confirmedBookings
+        - totalRevenue
+        - avgRating
+
+    CityStats:
+      type: object
+      properties:
+        city:
+          type: string
+        roomCount:
+          type: integer
+        avgPrice:
+          type: number
+      required:
+        - city
+        - roomCount
+        - avgPrice

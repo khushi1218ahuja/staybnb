@@ -1,0 +1,443 @@
+# Replit Prompt: StayBnB / RoomTrev — Full-Stack Room Booking Platform
+
+## Project Overview
+
+Build a full-stack web application called **StayBnB (RoomTrev)** — a platform that connects PG/hotel owners and tenants to simplify finding and booking PG accommodations. Think Airbnb but focused on PG rooms, private rooms, and shared accommodations.
+
+---
+
+## Tech Stack
+
+- **Frontend:** React + React Router + Tailwind CSS + React Query
+- **Backend:** Java 17 + Spring Boot 3.x
+- **ORM:** Spring Data JPA + Hibernate
+- **Database:** PostgreSQL (or H2 for local dev/Replit)
+- **Auth:** Spring Security + JWT (jjwt library)
+- **Password Hashing:** BCryptPasswordEncoder (built into Spring Security)
+- **Payments:** Mock Stripe integration (plain Java service, no SDK needed)
+- **Image Uploads:** Cloudinary Java SDK (or mock with local storage for Replit)
+- **Build Tool:** Maven (`pom.xml`)
+- **API Style:** RESTful JSON with `@RestController`
+
+---
+
+## Roles / User Types
+
+1. **GUEST** — Can search, book rooms, leave reviews
+2. **HOST** — Can list, edit, delete rooms; manage bookings
+3. **ADMIN** — Full control over users, rooms, bookings
+
+---
+
+## Spring Boot Project Structure
+
+```
+/backend                          → Spring Boot project root
+  pom.xml
+  src/main/java/com/staybnb/
+    StaybnbApplication.java       → @SpringBootApplication entry point
+
+    config/
+      SecurityConfig.java         → Spring Security + JWT filter chain
+      JwtUtil.java                → Token generation & validation
+      JwtAuthFilter.java          → OncePerRequestFilter for JWT
+      CorsConfig.java             → Allow React frontend origin
+
+    entity/
+      User.java                   → @Entity with @Enumerated role
+      Room.java                   → @Entity with @ElementCollection amenities
+      Booking.java                → @Entity with @Enumerated status
+      Review.java                 → @Entity
+
+    enums/
+      Role.java                   → USER, HOST, ADMIN
+      RoomType.java               → ENTIRE, PRIVATE, SHARED
+      BookingStatus.java          → PENDING, CONFIRMED, CANCELLED
+
+    repository/
+      UserRepository.java         → JpaRepository<User, Long>
+      RoomRepository.java         → JpaRepository + custom @Query for filters
+      BookingRepository.java      → JpaRepository + overlap conflict query
+      ReviewRepository.java       → JpaRepository<Review, Long>
+
+    dto/
+      RegisterRequest.java
+      LoginRequest.java
+      AuthResponse.java           → { token, user }
+      RoomRequest.java
+      RoomResponse.java
+      BookingRequest.java
+      BookingResponse.java
+      ReviewRequest.java
+
+    service/
+      AuthService.java
+      RoomService.java
+      BookingService.java
+      ReviewService.java
+      AdminService.java
+      PaymentService.java         → Mock Stripe logic
+
+    controller/
+      AuthController.java         → /api/auth/**
+      RoomController.java         → /api/rooms/**
+      BookingController.java      → /api/bookings/**
+      ReviewController.java       → /api/rooms/{id}/reviews
+      AdminController.java        → /api/admin/**
+
+  src/main/resources/
+    application.properties        → DB config, JWT secret, server port
+
+/frontend                         → React app (separate folder)
+  src/
+    pages/
+    components/
+    hooks/
+    context/
+    api/                          → Axios calls to Spring Boot
+```
+
+---
+
+## Entity Definitions (JPA)
+
+### User.java
+```java
+@Entity @Table(name = "users")
+public class User {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    @Column(unique = true) private String email;
+    private String password;           // BCrypt hashed
+    @Enumerated(EnumType.STRING)
+    private Role role;                 // USER, HOST, ADMIN
+    private String phone;
+    private String address;
+    private String profilePicture;
+    private boolean isVerified;
+    private LocalDateTime createdAt;
+}
+```
+
+### Room.java
+```java
+@Entity @Table(name = "rooms")
+public class Room {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    @ManyToOne private User host;
+    private String title;
+    private String description;
+    @Enumerated(EnumType.STRING) private RoomType type;  // ENTIRE, PRIVATE, SHARED
+    private Double pricePerNight;
+    private String location;
+    private String city;
+    @ElementCollection private List<String> amenities;
+    @ElementCollection private List<String> images;
+    private boolean isAvailable;
+    private Double avgRating;
+    private Integer reviewCount;
+    private LocalDateTime createdAt;
+}
+```
+
+### Booking.java
+```java
+@Entity @Table(name = "bookings")
+public class Booking {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    @ManyToOne private Room room;
+    @ManyToOne private User guest;
+    private LocalDate checkIn;
+    private LocalDate checkOut;
+    private Integer guestCount;
+    private Double totalPrice;
+    @Enumerated(EnumType.STRING) private BookingStatus status;  // PENDING, CONFIRMED, CANCELLED
+    private String paymentStatus;
+    private LocalDateTime createdAt;
+}
+```
+
+### Review.java
+```java
+@Entity @Table(name = "reviews")
+public class Review {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    @ManyToOne private Room room;
+    @ManyToOne private User user;
+    @Min(1) @Max(5) private Integer rating;
+    private String comment;
+    private LocalDateTime createdAt;
+}
+```
+
+---
+
+## REST API Endpoints (Spring Controllers)
+
+### AuthController — `/api/auth`
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| POST | `/register` | Public | Register: name, email, password, role |
+| POST | `/login` | Public | Returns `{ token, user }` |
+| GET | `/me` | Authenticated | Get current user from JWT |
+
+### RoomController — `/api/rooms`
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/` | Public | List rooms with filters: `?city=&type=&minPrice=&maxPrice=&keyword=` |
+| GET | `/{id}` | Public | Room detail with reviews |
+| POST | `/` | HOST | Create room |
+| PUT | `/{id}` | HOST (owner) | Update room |
+| DELETE | `/{id}` | HOST (owner) | Delete room |
+| POST | `/{id}/images` | HOST | Upload images |
+
+### BookingController — `/api/bookings`
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| POST | `/` | USER | Create booking (conflict check + price calc) |
+| GET | `/my` | USER | Current user's bookings |
+| GET | `/host` | HOST | All bookings for host's rooms |
+| GET | `/{id}` | Authenticated | Booking detail |
+| PUT | `/{id}/cancel` | USER (owner) | Cancel + mock refund |
+
+### ReviewController — `/api/rooms/{roomId}/reviews`
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| POST | `/` | USER | Add review (only if booking completed) |
+| GET | `/` | Public | All reviews for a room |
+| DELETE | `/api/reviews/{id}` | ADMIN or author | Delete review |
+
+### AdminController — `/api/admin`
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/users` | ADMIN | All users |
+| DELETE | `/users/{id}` | ADMIN | Delete user |
+| GET | `/bookings` | ADMIN | All bookings |
+| PUT | `/bookings/{id}/status` | ADMIN | Update booking status |
+
+---
+
+## Security Configuration (Spring Security)
+
+```java
+// SecurityConfig.java — configure filter chain
+http
+  .csrf(csrf -> csrf.disable())
+  .authorizeHttpRequests(auth -> auth
+    .requestMatchers("/api/auth/**").permitAll()
+    .requestMatchers(HttpMethod.GET, "/api/rooms/**").permitAll()
+    .requestMatchers("/api/admin/**").hasRole("ADMIN")
+    .requestMatchers(HttpMethod.POST, "/api/rooms").hasRole("HOST")
+    .anyRequest().authenticated()
+  )
+  .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+```
+
+JWT filter should:
+1. Extract `Authorization: Bearer <token>` header
+2. Validate token using `JwtUtil`
+3. Load user via `UserDetailsService`
+4. Set `SecurityContextHolder` authentication
+
+---
+
+## Key Business Logic (Service Layer)
+
+### 1. Double-Booking Prevention (BookingRepository)
+```java
+// Custom JPQL query to detect overlapping bookings
+@Query("""
+  SELECT COUNT(b) FROM Booking b
+  WHERE b.room.id = :roomId
+  AND b.status = 'CONFIRMED'
+  AND b.checkIn < :checkOut
+  AND b.checkOut > :checkIn
+""")
+long countOverlappingBookings(Long roomId, LocalDate checkIn, LocalDate checkOut);
+```
+Throw `ResponseStatusException(HttpStatus.CONFLICT)` if count > 0.
+
+### 2. Price Calculation (BookingService)
+```java
+long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+double total = room.getPricePerNight() * nights * guestCount;
+booking.setTotalPrice(total);
+```
+
+### 3. Rating Recalculation (ReviewService)
+After saving a review:
+```java
+Double avg = reviewRepository.findAverageRatingByRoomId(roomId);
+int count = reviewRepository.countByRoomId(roomId);
+room.setAvgRating(avg);
+room.setReviewCount(count);
+roomRepository.save(room);
+```
+
+### 4. Mock Payment (PaymentService)
+```java
+public String mockCharge(Double amount) {
+    // Simulate payment — log and return mock transaction ID
+    String txnId = "TXN_" + UUID.randomUUID();
+    System.out.println("Mock charge: ₹" + amount + " | TXN: " + txnId);
+    return txnId;
+}
+
+public void mockRefund(String txnId) {
+    System.out.println("Mock refund for TXN: " + txnId);
+}
+```
+
+---
+
+## application.properties
+
+```properties
+# Server
+server.port=8080
+
+# Database (H2 for Replit dev)
+spring.datasource.url=jdbc:h2:mem:staybnbdb
+spring.datasource.driver-class-name=org.h2.Driver
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+spring.jpa.hibernate.ddl-auto=create-drop
+
+# JWT
+jwt.secret=your_super_secret_key_here_min_32_chars
+jwt.expiration=86400000
+
+# CORS (React dev server)
+cors.allowed-origin=http://localhost:5173
+```
+
+---
+
+## pom.xml Dependencies
+
+```xml
+<dependencies>
+  <!-- Spring Boot Starters -->
+  <dependency>spring-boot-starter-web</dependency>
+  <dependency>spring-boot-starter-data-jpa</dependency>
+  <dependency>spring-boot-starter-security</dependency>
+  <dependency>spring-boot-starter-validation</dependency>
+
+  <!-- Database -->
+  <dependency>com.h2database:h2</dependency>
+  <!-- Swap for PostgreSQL in prod:
+  <dependency>org.postgresql:postgresql</dependency> -->
+
+  <!-- JWT -->
+  <dependency>io.jsonwebtoken:jjwt-api:0.11.5</dependency>
+  <dependency>io.jsonwebtoken:jjwt-impl:0.11.5</dependency>
+  <dependency>io.jsonwebtoken:jjwt-jackson:0.11.5</dependency>
+
+  <!-- Lombok (optional but recommended) -->
+  <dependency>org.projectlombok:lombok</dependency>
+</dependencies>
+```
+
+---
+
+## Frontend (React) — API Layer
+
+All Axios calls should point to `http://localhost:8080/api`. Attach JWT token to every protected request:
+
+```js
+// api/axiosInstance.js
+import axios from 'axios';
+
+const api = axios.create({ baseURL: 'http://localhost:8080/api' });
+
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export default api;
+```
+
+---
+
+## Frontend Pages
+
+### Public Pages
+1. **Home (`/`)** — Hero banner, search bar (location + dates + guests), featured rooms grid
+2. **Search/Browse (`/rooms`)** — Filter sidebar, room cards grid, pagination
+3. **Room Detail (`/rooms/:id`)** — Image gallery, amenities, booking form, reviews
+4. **Login (`/login`)** and **Register (`/register`)**
+
+### Guest Dashboard (`/dashboard`)
+- My Bookings with status badges (PENDING / CONFIRMED / CANCELLED)
+- Cancel booking button
+
+### Host Dashboard (`/host`)
+- My Listings (create, edit, delete)
+- Bookings on my rooms
+
+### Admin Dashboard (`/admin`)
+- Users table, all rooms, all bookings with status control
+
+---
+
+## UI/UX Design Guidelines
+
+- **Color Scheme:** Deep navy `#1E3A5F` primary, white `#FFFFFF`, coral `#FF6B6B` accent
+- **Font:** Inter or Poppins
+- **Style:** Clean, card-based, Airbnb-inspired
+- **Responsive:** Mobile-first with Tailwind breakpoints
+- **Loading states:** Skeleton loaders for room lists
+- **Toast notifications:** Success/error on book, cancel, login
+
+---
+
+## Sample Seed Data
+
+Use a `DataLoader` component (`CommandLineRunner` bean in Spring Boot) to seed:
+- 3 users: 1 GUEST, 1 HOST, 1 ADMIN (passwords BCrypt-hashed)
+- 6 rooms across different cities and types
+- 4 bookings with varying statuses
+- 6 reviews
+
+---
+
+## Build & Run Instructions (README)
+
+```bash
+# Backend
+cd backend
+mvn spring-boot:run
+# Runs on http://localhost:8080
+# H2 console at http://localhost:8080/h2-console
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+# Runs on http://localhost:5173
+```
+
+---
+
+## What to Build First (Priority Order)
+
+1. Spring Boot project setup — `pom.xml`, `application.properties`, package structure
+2. JPA Entities + Repositories
+3. `AuthService` + `AuthController` + JWT config (register/login/me)
+4. `RoomService` + `RoomController` — CRUD + search filter query
+5. `BookingService` + `BookingController` — conflict detection + price calc
+6. `ReviewService` + `ReviewController` — add review + rating update
+7. `AdminController` — user/room/booking management
+8. Seed data via `CommandLineRunner`
+9. React frontend — auth, browse, booking flow, dashboards
+10. Polish — CORS, error handling, loading states, responsive UI
+
+---
+
+Build the full application end-to-end. Ensure Spring Boot API is fully connected to the React frontend via Axios. Include a README with setup and run instructions for both services.
